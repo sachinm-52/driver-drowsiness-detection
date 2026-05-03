@@ -5,6 +5,77 @@ import time
 import threading
 from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
 import av
+import streamlit.components.v1 as components
+
+
+# JavaScript alarm sound using Web Audio API
+ALARM_JS = """
+<script>
+(function() {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AudioContext();
+    
+    function beep(freq, duration, volume) {
+        return new Promise(resolve => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.frequency.value = freq;
+            osc.type = 'square';
+            gain.gain.value = volume;
+            osc.start();
+            setTimeout(() => { osc.stop(); resolve(); }, duration);
+        });
+    }
+    
+    async function playAlarm() {
+        if (ctx.state === 'suspended') await ctx.resume();
+        for (let i = 0; i < 3; i++) {
+            await beep(1000, 200, 0.5);
+            await new Promise(r => setTimeout(r, 100));
+            await beep(800, 200, 0.5);
+            await new Promise(r => setTimeout(r, 100));
+        }
+    }
+    
+    playAlarm();
+})()
+</script>
+"""
+
+EMERGENCY_JS = """
+<script>
+(function() {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AudioContext();
+    
+    function beep(freq, duration, volume) {
+        return new Promise(resolve => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.frequency.value = freq;
+            osc.type = 'sawtooth';
+            gain.gain.value = volume;
+            osc.start();
+            setTimeout(() => { osc.stop(); resolve(); }, duration);
+        });
+    }
+    
+    async function playSiren() {
+        if (ctx.state === 'suspended') await ctx.resume();
+        for (let i = 0; i < 5; i++) {
+            await beep(1200, 150, 0.6);
+            await beep(600, 150, 0.6);
+        }
+    }
+    
+    playSiren();
+})()
+</script>
+"""
 
 # Page configuration
 st.set_page_config(
@@ -204,10 +275,16 @@ class DrowsinessDetector(VideoProcessorBase):
         self._fps = 0
         self._last_frame_time = time.time()
         self._frame_count = 0
+        self._alarm_triggered = False
+        self._emergency_triggered = False
     
     def get_status(self):
         """Get current detection status (thread-safe)."""
         with self._lock:
+            alarm_triggered = self._alarm_triggered
+            emergency_triggered = self._emergency_triggered
+            self._alarm_triggered = False
+            self._emergency_triggered = False
             return {
                 "status": self._status,
                 "eyes": self._eyes_status,
@@ -215,7 +292,9 @@ class DrowsinessDetector(VideoProcessorBase):
                 "alarms": self._alarm_count,
                 "emergency": self._emergency,
                 "fps": self._fps,
-                "frames": self._frame_count
+                "frames": self._frame_count,
+                "alarm_triggered": alarm_triggered,
+                "emergency_triggered": emergency_triggered
             }
     
     def _enhance_image(self, frame):
@@ -305,10 +384,12 @@ class DrowsinessDetector(VideoProcessorBase):
             if self.closed_frames >= self.alarm_frames:
                 self.alarm_count += 1
                 self.closed_frames = self.alarm_frames // 2
+                self._alarm_triggered = True
                 
                 if self.alarm_count >= self.max_alarms:
                     self.emergency_mode = True
                     self.emergency_start_time = time.time()
+                    self._emergency_triggered = True
             
             # Determine status
             if face_detected:
@@ -552,6 +633,12 @@ def main():
                 </div>
                 """, unsafe_allow_html=True)
             
+            # Play alarm sounds via JavaScript
+            if info.get("emergency_triggered"):
+                components.html(EMERGENCY_JS, height=0)
+            elif info.get("alarm_triggered"):
+                components.html(ALARM_JS, height=0)
+            
             # Emergency banner
             if info["emergency"]:
                 st.markdown("""
@@ -560,6 +647,7 @@ def main():
                     <p style="color: rgba(255,255,255,0.7);">Multiple drowsiness alerts detected. Vehicle stopping procedure initiated.</p>
                 </div>
                 """, unsafe_allow_html=True)
+                components.html(EMERGENCY_JS, height=0)
             
             time.sleep(0.3)
     else:
