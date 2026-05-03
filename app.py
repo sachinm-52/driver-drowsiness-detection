@@ -8,6 +8,21 @@ import av
 import streamlit.components.v1 as components
 
 
+# JavaScript to STOP all sounds instantly
+STOP_JS = """
+<script>
+(function() {
+    // Close all stored AudioContexts to kill sounds instantly
+    if (window._alarmContexts) {
+        window._alarmContexts.forEach(function(c) {
+            try { c.close(); } catch(e) {}
+        });
+    }
+    window._alarmContexts = [];
+})()
+</script>
+"""
+
 def get_alarm_js(status):
     """Generate JavaScript alarm sound based on current status."""
     if status == "DROWSY!":
@@ -15,13 +30,21 @@ def get_alarm_js(status):
         return """
 <script>
 (function() {
+    // Kill any previous sounds first
+    if (window._alarmContexts) {
+        window._alarmContexts.forEach(function(c) { try { c.close(); } catch(e) {} });
+    }
+    window._alarmContexts = [];
+    
     const AC = window.AudioContext || window.webkitAudioContext;
     const ctx = new AC();
+    window._alarmContexts.push(ctx);
+    
     async function play() {
         if (ctx.state === 'suspended') await ctx.resume();
         const t = ctx.currentTime;
         
-        // Wailing cry 1 - rising
+        // Wailing cry - rising and falling
         const o1 = ctx.createOscillator();
         const g1 = ctx.createGain();
         o1.connect(g1); g1.connect(ctx.destination);
@@ -37,7 +60,7 @@ def get_alarm_js(status):
         g1.gain.setValueAtTime(1.0, t + 1.6);
         o1.start(t); o1.stop(t + 2.0);
         
-        // Tremolo/vibrato layer - makes it sound like crying
+        // Tremolo vibrato layer - crying effect
         const o2 = ctx.createOscillator();
         const g2 = ctx.createGain();
         const lfo = ctx.createOscillator();
@@ -75,12 +98,19 @@ def get_alarm_js(status):
 </script>
 """
     elif status == "EMERGENCY":
-        # Intense siren - alternating frequencies, louder
+        # Intense siren
         return """
 <script>
 (function() {
+    if (window._alarmContexts) {
+        window._alarmContexts.forEach(function(c) { try { c.close(); } catch(e) {} });
+    }
+    window._alarmContexts = [];
+    
     const AC = window.AudioContext || window.webkitAudioContext;
     const ctx = new AC();
+    window._alarmContexts.push(ctx);
+    
     function siren(f1, f2, d, v) {
         return new Promise(res => {
             const o = ctx.createOscillator();
@@ -106,17 +136,24 @@ def get_alarm_js(status):
 </script>
 """
     elif status == "SLEEPY":
-        # CAR ACCIDENT / CRASH SOUND - impact + metal + glass
+        # CAR ACCIDENT / CRASH SOUND
         return """
 <script>
 (function() {
+    if (window._alarmContexts) {
+        window._alarmContexts.forEach(function(c) { try { c.close(); } catch(e) {} });
+    }
+    window._alarmContexts = [];
+    
     const AC = window.AudioContext || window.webkitAudioContext;
     const ctx = new AC();
+    window._alarmContexts.push(ctx);
+    
     async function play() {
         if (ctx.state === 'suspended') await ctx.resume();
         const t = ctx.currentTime;
         
-        // IMPACT - loud white noise burst (crash)
+        // IMPACT - white noise burst
         const bufSize = ctx.sampleRate * 0.8;
         const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
         const data = buf.getChannelData(0);
@@ -131,7 +168,7 @@ def get_alarm_js(status):
         noiseGain.gain.exponentialRampToValueAtTime(0.01, t + 0.8);
         noise.start(t);
         
-        // LOW RUMBLE - deep bass impact
+        // LOW RUMBLE
         const bass = ctx.createOscillator();
         const bassGain = ctx.createGain();
         bass.connect(bassGain); bassGain.connect(ctx.destination);
@@ -142,7 +179,7 @@ def get_alarm_js(status):
         bassGain.gain.exponentialRampToValueAtTime(0.01, t + 1.0);
         bass.start(t); bass.stop(t + 1.0);
         
-        // METAL SCRAPING - harsh metallic screech
+        // METAL SCRAPING
         const metal = ctx.createOscillator();
         const metalGain = ctx.createGain();
         metal.connect(metalGain); metalGain.connect(ctx.destination);
@@ -156,7 +193,7 @@ def get_alarm_js(status):
         metalGain.gain.exponentialRampToValueAtTime(0.01, t + 1.2);
         metal.start(t); metal.stop(t + 1.2);
         
-        // GLASS BREAKING - high freq bursts
+        // GLASS BREAKING
         const glass = ctx.createOscillator();
         const glassGain = ctx.createGain();
         glass.connect(glassGain); glassGain.connect(ctx.destination);
@@ -171,7 +208,7 @@ def get_alarm_js(status):
         glassGain.gain.exponentialRampToValueAtTime(0.01, t + 0.5);
         glass.start(t); glass.stop(t + 0.5);
         
-        // HORN - car horn blaring after impact
+        // HORN blaring
         const horn = ctx.createOscillator();
         const hornGain = ctx.createGain();
         horn.connect(hornGain); hornGain.connect(ctx.destination);
@@ -692,6 +729,9 @@ def main():
         processor.alarm_frames = alarm_seconds * processor.fps_estimate
         processor.max_alarms = max_alarms
         
+        prev_status = None
+        sound_placeholder = st.empty()
+        
         while ctx.state.playing:
             info = processor.get_status()
             
@@ -746,10 +786,19 @@ def main():
                 </div>
                 """, unsafe_allow_html=True)
             
-            # Play alarm sounds based on current status
-            alarm_js = get_alarm_js(status)
-            if alarm_js:
-                components.html(alarm_js, height=0)
+            # SOUND LOGIC: play on transition, stop when eyes open
+            with sound_placeholder.container():
+                if status != prev_status:
+                    if status in ("AWAKE", "NO FACE", "ALERT"):
+                        # Eyes opened or face gone — STOP sound immediately
+                        components.html(STOP_JS, height=0)
+                    else:
+                        # Status changed to SLEEPY/DROWSY/EMERGENCY — play alarm
+                        alarm_js = get_alarm_js(status)
+                        if alarm_js:
+                            components.html(alarm_js, height=0)
+            
+            prev_status = status
             
             # Emergency banner
             if info["emergency"]:
