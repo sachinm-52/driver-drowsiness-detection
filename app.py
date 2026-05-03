@@ -8,74 +8,102 @@ import av
 import streamlit.components.v1 as components
 
 
-# JavaScript alarm sound using Web Audio API
-ALARM_JS = """
+def get_alarm_js(status):
+    """Generate JavaScript alarm sound based on current status."""
+    if status == "DROWSY!":
+        # Loud, urgent alarm - rapid high-pitched beeps
+        return """
 <script>
 (function() {
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    const ctx = new AudioContext();
-    
-    function beep(freq, duration, volume) {
-        return new Promise(resolve => {
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.frequency.value = freq;
-            osc.type = 'square';
-            gain.gain.value = volume;
-            osc.start();
-            setTimeout(() => { osc.stop(); resolve(); }, duration);
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AC();
+    function beep(f, d, v, type) {
+        return new Promise(res => {
+            const o = ctx.createOscillator();
+            const g = ctx.createGain();
+            o.connect(g); g.connect(ctx.destination);
+            o.frequency.value = f; o.type = type || 'square';
+            g.gain.value = v;
+            g.gain.setValueAtTime(v, ctx.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + d/1000);
+            o.start(); setTimeout(() => { o.stop(); res(); }, d);
         });
     }
-    
-    async function playAlarm() {
+    async function play() {
         if (ctx.state === 'suspended') await ctx.resume();
-        for (let i = 0; i < 3; i++) {
-            await beep(1000, 200, 0.5);
-            await new Promise(r => setTimeout(r, 100));
-            await beep(800, 200, 0.5);
-            await new Promise(r => setTimeout(r, 100));
-        }
+        await beep(880, 150, 0.7, 'square');
+        await new Promise(r => setTimeout(r, 80));
+        await beep(1100, 150, 0.7, 'square');
+        await new Promise(r => setTimeout(r, 80));
+        await beep(880, 150, 0.7, 'square');
+        await new Promise(r => setTimeout(r, 80));
+        await beep(1100, 200, 0.8, 'square');
     }
-    
-    playAlarm();
+    play();
 })()
 </script>
 """
-
-EMERGENCY_JS = """
+    elif status == "EMERGENCY":
+        # Intense siren - alternating frequencies, louder
+        return """
 <script>
 (function() {
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    const ctx = new AudioContext();
-    
-    function beep(freq, duration, volume) {
-        return new Promise(resolve => {
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.frequency.value = freq;
-            osc.type = 'sawtooth';
-            gain.gain.value = volume;
-            osc.start();
-            setTimeout(() => { osc.stop(); resolve(); }, duration);
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AC();
+    function siren(f1, f2, d, v) {
+        return new Promise(res => {
+            const o = ctx.createOscillator();
+            const g = ctx.createGain();
+            o.connect(g); g.connect(ctx.destination);
+            o.type = 'sawtooth';
+            g.gain.value = v;
+            o.frequency.setValueAtTime(f1, ctx.currentTime);
+            o.frequency.linearRampToValueAtTime(f2, ctx.currentTime + d/1000);
+            o.start(); setTimeout(() => { o.stop(); res(); }, d);
         });
     }
-    
-    async function playSiren() {
+    async function play() {
         if (ctx.state === 'suspended') await ctx.resume();
-        for (let i = 0; i < 5; i++) {
-            await beep(1200, 150, 0.6);
-            await beep(600, 150, 0.6);
-        }
+        await siren(400, 1200, 300, 0.6);
+        await siren(1200, 400, 300, 0.6);
+        await siren(400, 1200, 300, 0.7);
+        await siren(1200, 400, 300, 0.7);
+        await siren(400, 1400, 400, 0.8);
     }
-    
-    playSiren();
+    play();
 })()
 </script>
 """
+    elif status == "SLEEPY":
+        # Gentle warning - soft double beep
+        return """
+<script>
+(function() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AC();
+    function beep(f, d, v) {
+        return new Promise(res => {
+            const o = ctx.createOscillator();
+            const g = ctx.createGain();
+            o.connect(g); g.connect(ctx.destination);
+            o.frequency.value = f; o.type = 'sine';
+            g.gain.value = v;
+            g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + d/1000);
+            o.start(); setTimeout(() => { o.stop(); res(); }, d);
+        });
+    }
+    async function play() {
+        if (ctx.state === 'suspended') await ctx.resume();
+        await beep(660, 120, 0.3);
+        await new Promise(r => setTimeout(r, 100));
+        await beep(660, 120, 0.3);
+    }
+    play();
+})()
+</script>
+"""
+    else:
+        return None
 
 # Page configuration
 st.set_page_config(
@@ -633,11 +661,10 @@ def main():
                 </div>
                 """, unsafe_allow_html=True)
             
-            # Play alarm sounds via JavaScript
-            if info.get("emergency_triggered"):
-                components.html(EMERGENCY_JS, height=0)
-            elif info.get("alarm_triggered"):
-                components.html(ALARM_JS, height=0)
+            # Play alarm sounds based on current status
+            alarm_js = get_alarm_js(status)
+            if alarm_js:
+                components.html(alarm_js, height=0)
             
             # Emergency banner
             if info["emergency"]:
@@ -647,7 +674,6 @@ def main():
                     <p style="color: rgba(255,255,255,0.7);">Multiple drowsiness alerts detected. Vehicle stopping procedure initiated.</p>
                 </div>
                 """, unsafe_allow_html=True)
-                components.html(EMERGENCY_JS, height=0)
             
             time.sleep(0.3)
     else:
