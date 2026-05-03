@@ -361,20 +361,27 @@ class DrowsinessDetector(VideoProcessorBase):
         return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
     
     def _detect_eyes(self, roi_gray, roi_color):
-        """Detect eyes in face ROI."""
+        """Detect open eyes in face ROI. Strict detection - only clearly open eyes pass."""
         eyes = self.eye_cascade.detectMultiScale(
             roi_gray,
-            scaleFactor=1.1,
-            minNeighbors=3,
-            minSize=(15, 12)
+            scaleFactor=1.05,
+            minNeighbors=8,
+            minSize=(25, 20)
         )
         
-        count = 0
+        open_eyes = 0
         for (ex, ey, ew, eh) in eyes[:2]:
-            cv2.rectangle(roi_color, (ex, ey), (ex + ew, ey + eh), (255, 100, 0), 1)
-            count += 1
+            # Extra check: analyze eye region for openness
+            # Open eyes have more contrast (white sclera + dark pupil)
+            eye_roi = roi_gray[ey:ey+eh, ex:ex+ew]
+            if eye_roi.size > 0:
+                std_dev = np.std(eye_roi)
+                # Open eyes typically have std_dev > 15 (high contrast)
+                if std_dev > 12:
+                    cv2.rectangle(roi_color, (ex, ey), (ex+ew, ey+eh), (255, 100, 0), 1)
+                    open_eyes += 1
         
-        return count
+        return open_eyes
     
     def recv(self, frame):
         """Process each video frame."""
@@ -415,19 +422,19 @@ class DrowsinessDetector(VideoProcessorBase):
                 
                 cv2.rectangle(img, (x, y), (x + fw, y + fh), face_color, 2)
                 
-                # Eye detection in upper 65% of face (more coverage)
-                roi_gray = gray[y:y + int(fh * 0.65), x:x + fw]
-                roi_color = img[y:y + int(fh * 0.65), x:x + fw]
+                # Eye detection in upper 60% of face
+                roi_gray = gray[y:y + int(fh * 0.6), x:x + fw]
+                roi_color = img[y:y + int(fh * 0.6), x:x + fw]
                 eyes_detected = self._detect_eyes(roi_gray, roi_color)
                 
-                # Eye status label
-                eye_text = "OPEN" if eyes_detected >= 1 else "CLOSED"
-                eye_col = (0, 255, 0) if eyes_detected >= 1 else (0, 0, 255)
+                # Eye status label - need both eyes open
+                eye_text = "OPEN" if eyes_detected >= 2 else "CLOSED"
+                eye_col = (0, 255, 0) if eyes_detected >= 2 else (0, 0, 255)
                 cv2.putText(img, eye_text, (x, y - 10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, eye_col, 2)
             
             # Update closed frame counter
-            if eyes_detected >= 1:
+            if eyes_detected >= 2:
                 self.closed_frames = max(0, self.closed_frames - 3)  # Fast recovery
             elif face_detected:
                 self.closed_frames += 1
@@ -447,7 +454,7 @@ class DrowsinessDetector(VideoProcessorBase):
             
             # Determine status
             if face_detected:
-                if eyes_detected >= 1:
+                if eyes_detected >= 2:
                     status = "AWAKE"
                     eyes_st = "OPEN"
                 elif time_until_alarm < 1.0:
