@@ -11,33 +11,64 @@ import streamlit.components.v1 as components
 def get_alarm_js(status):
     """Generate JavaScript alarm sound based on current status."""
     if status == "DROWSY!":
-        # Loud, urgent alarm - rapid high-pitched beeps
+        # LOUD CRYING/WAILING ALARM - intense, impossible to ignore
         return """
 <script>
 (function() {
     const AC = window.AudioContext || window.webkitAudioContext;
     const ctx = new AC();
-    function beep(f, d, v, type) {
-        return new Promise(res => {
-            const o = ctx.createOscillator();
-            const g = ctx.createGain();
-            o.connect(g); g.connect(ctx.destination);
-            o.frequency.value = f; o.type = type || 'square';
-            g.gain.value = v;
-            g.gain.setValueAtTime(v, ctx.currentTime);
-            g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + d/1000);
-            o.start(); setTimeout(() => { o.stop(); res(); }, d);
-        });
-    }
     async function play() {
         if (ctx.state === 'suspended') await ctx.resume();
-        await beep(880, 150, 0.7, 'square');
-        await new Promise(r => setTimeout(r, 80));
-        await beep(1100, 150, 0.7, 'square');
-        await new Promise(r => setTimeout(r, 80));
-        await beep(880, 150, 0.7, 'square');
-        await new Promise(r => setTimeout(r, 80));
-        await beep(1100, 200, 0.8, 'square');
+        const t = ctx.currentTime;
+        
+        // Wailing cry 1 - rising
+        const o1 = ctx.createOscillator();
+        const g1 = ctx.createGain();
+        o1.connect(g1); g1.connect(ctx.destination);
+        o1.type = 'sawtooth';
+        o1.frequency.setValueAtTime(300, t);
+        o1.frequency.linearRampToValueAtTime(900, t + 0.4);
+        o1.frequency.linearRampToValueAtTime(300, t + 0.8);
+        o1.frequency.linearRampToValueAtTime(1000, t + 1.2);
+        o1.frequency.linearRampToValueAtTime(250, t + 1.6);
+        o1.frequency.linearRampToValueAtTime(1100, t + 2.0);
+        g1.gain.setValueAtTime(0.8, t);
+        g1.gain.setValueAtTime(0.9, t + 0.8);
+        g1.gain.setValueAtTime(1.0, t + 1.6);
+        o1.start(t); o1.stop(t + 2.0);
+        
+        // Tremolo/vibrato layer - makes it sound like crying
+        const o2 = ctx.createOscillator();
+        const g2 = ctx.createGain();
+        const lfo = ctx.createOscillator();
+        const lfoGain = ctx.createGain();
+        o2.connect(g2); g2.connect(ctx.destination);
+        lfo.connect(lfoGain); lfoGain.connect(g2.gain);
+        o2.type = 'square';
+        o2.frequency.setValueAtTime(400, t);
+        o2.frequency.linearRampToValueAtTime(1200, t + 0.5);
+        o2.frequency.linearRampToValueAtTime(400, t + 1.0);
+        o2.frequency.linearRampToValueAtTime(1300, t + 1.5);
+        o2.frequency.linearRampToValueAtTime(350, t + 2.0);
+        g2.gain.value = 0.5;
+        lfo.frequency.value = 15;
+        lfoGain.gain.value = 0.4;
+        lfo.start(t); o2.start(t);
+        lfo.stop(t + 2.0); o2.stop(t + 2.0);
+        
+        // High-pitched screech
+        const o3 = ctx.createOscillator();
+        const g3 = ctx.createGain();
+        o3.connect(g3); g3.connect(ctx.destination);
+        o3.type = 'sine';
+        o3.frequency.setValueAtTime(1500, t);
+        o3.frequency.linearRampToValueAtTime(2500, t + 0.3);
+        o3.frequency.linearRampToValueAtTime(1500, t + 0.6);
+        o3.frequency.linearRampToValueAtTime(2800, t + 1.0);
+        o3.frequency.linearRampToValueAtTime(1500, t + 1.4);
+        o3.frequency.linearRampToValueAtTime(3000, t + 1.8);
+        g3.gain.value = 0.3;
+        o3.start(t); o3.stop(t + 2.0);
     }
     play();
 })()
@@ -75,28 +106,82 @@ def get_alarm_js(status):
 </script>
 """
     elif status == "SLEEPY":
-        # Gentle warning - soft double beep
+        # CAR ACCIDENT / CRASH SOUND - impact + metal + glass
         return """
 <script>
 (function() {
     const AC = window.AudioContext || window.webkitAudioContext;
     const ctx = new AC();
-    function beep(f, d, v) {
-        return new Promise(res => {
-            const o = ctx.createOscillator();
-            const g = ctx.createGain();
-            o.connect(g); g.connect(ctx.destination);
-            o.frequency.value = f; o.type = 'sine';
-            g.gain.value = v;
-            g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + d/1000);
-            o.start(); setTimeout(() => { o.stop(); res(); }, d);
-        });
-    }
     async function play() {
         if (ctx.state === 'suspended') await ctx.resume();
-        await beep(660, 120, 0.3);
-        await new Promise(r => setTimeout(r, 100));
-        await beep(660, 120, 0.3);
+        const t = ctx.currentTime;
+        
+        // IMPACT - loud white noise burst (crash)
+        const bufSize = ctx.sampleRate * 0.8;
+        const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < bufSize; i++) {
+            data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.15));
+        }
+        const noise = ctx.createBufferSource();
+        noise.buffer = buf;
+        const noiseGain = ctx.createGain();
+        noise.connect(noiseGain); noiseGain.connect(ctx.destination);
+        noiseGain.gain.setValueAtTime(0.9, t);
+        noiseGain.gain.exponentialRampToValueAtTime(0.01, t + 0.8);
+        noise.start(t);
+        
+        // LOW RUMBLE - deep bass impact
+        const bass = ctx.createOscillator();
+        const bassGain = ctx.createGain();
+        bass.connect(bassGain); bassGain.connect(ctx.destination);
+        bass.type = 'sine';
+        bass.frequency.setValueAtTime(80, t);
+        bass.frequency.exponentialRampToValueAtTime(20, t + 1.0);
+        bassGain.gain.setValueAtTime(0.8, t);
+        bassGain.gain.exponentialRampToValueAtTime(0.01, t + 1.0);
+        bass.start(t); bass.stop(t + 1.0);
+        
+        // METAL SCRAPING - harsh metallic screech
+        const metal = ctx.createOscillator();
+        const metalGain = ctx.createGain();
+        metal.connect(metalGain); metalGain.connect(ctx.destination);
+        metal.type = 'sawtooth';
+        metal.frequency.setValueAtTime(2000, t + 0.1);
+        metal.frequency.linearRampToValueAtTime(800, t + 0.5);
+        metal.frequency.linearRampToValueAtTime(1500, t + 0.8);
+        metal.frequency.linearRampToValueAtTime(400, t + 1.2);
+        metalGain.gain.setValueAtTime(0, t);
+        metalGain.gain.linearRampToValueAtTime(0.5, t + 0.15);
+        metalGain.gain.exponentialRampToValueAtTime(0.01, t + 1.2);
+        metal.start(t); metal.stop(t + 1.2);
+        
+        // GLASS BREAKING - high freq bursts
+        const glass = ctx.createOscillator();
+        const glassGain = ctx.createGain();
+        glass.connect(glassGain); glassGain.connect(ctx.destination);
+        glass.type = 'square';
+        glass.frequency.setValueAtTime(4000, t + 0.05);
+        glass.frequency.setValueAtTime(5000, t + 0.1);
+        glass.frequency.setValueAtTime(3500, t + 0.15);
+        glass.frequency.setValueAtTime(6000, t + 0.2);
+        glass.frequency.setValueAtTime(3000, t + 0.3);
+        glassGain.gain.setValueAtTime(0, t);
+        glassGain.gain.linearRampToValueAtTime(0.4, t + 0.05);
+        glassGain.gain.exponentialRampToValueAtTime(0.01, t + 0.5);
+        glass.start(t); glass.stop(t + 0.5);
+        
+        // HORN - car horn blaring after impact
+        const horn = ctx.createOscillator();
+        const hornGain = ctx.createGain();
+        horn.connect(hornGain); hornGain.connect(ctx.destination);
+        horn.type = 'sawtooth';
+        horn.frequency.value = 480;
+        hornGain.gain.setValueAtTime(0, t + 0.3);
+        hornGain.gain.linearRampToValueAtTime(0.6, t + 0.5);
+        hornGain.gain.setValueAtTime(0.6, t + 1.5);
+        hornGain.gain.exponentialRampToValueAtTime(0.01, t + 2.0);
+        horn.start(t + 0.3); horn.stop(t + 2.0);
     }
     play();
 })()
